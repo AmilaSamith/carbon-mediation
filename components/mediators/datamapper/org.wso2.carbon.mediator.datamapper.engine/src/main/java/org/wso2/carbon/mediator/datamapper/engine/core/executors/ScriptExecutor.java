@@ -30,10 +30,7 @@ import org.wso2.carbon.mediator.datamapper.engine.output.formatters.MapOutputFor
 import org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineUtils;
 import org.wso2.carbon.mediator.datamapper.engine.utils.OpenJDKNashornFactoryWrapper;
 
-import javax.script.Bindings;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
+import javax.script.*;
 import java.util.Map;
 
 import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.DEFAULT_ENGINE_NAME;
@@ -118,18 +115,18 @@ public class ScriptExecutor implements Executor {
             JSFunction jsFunction = mappingResource.getFunction();
 
             if (jsFunction.getBindingHelperFunction() != null) {
-                jsFunction.getBindingHelperFunction().eval(bindings);
+                ((CompiledScript) jsFunction.getBindingHelperFunction()).eval(bindings);
             } else {
                 scriptEngine.eval(helperJSFunction, bindings);
             }
             if (jsFunction.getCompiledBody() != null) {
-                jsFunction.getCompiledBody().eval(bindings);
+                ((CompiledScript) jsFunction.getCompiledBody()).eval(bindings);
             } else {
                 scriptEngine.eval(jsFunction.getFunctionBody(), bindings);
             }
             Object result;
             if (jsFunction.getCompiledName() != null) {
-                result = jsFunction.getCompiledName().eval(bindings);
+                result = ((CompiledScript) jsFunction.getCompiledName()).eval(bindings);
             } else {
                 result = scriptEngine.eval(jsFunction.getFunctionName(), bindings);
             }
