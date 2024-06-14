@@ -1914,6 +1914,31 @@
                 <version>${rhino.wso2.js.version}</version>
             </dependency>
             <dependency>
+                <groupId>org.graalvm.sdk</groupId>
+                <artifactId>graal-sdk</artifactId>
+                <version>${graalvm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.graalvm.js</groupId>
+                <artifactId>js</artifactId>
+                <version>${graalvm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.graalvm.truffle</groupId>
+                <artifactId>truffle-api</artifactId>
+                <version>${graalvm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.graalvm.regex</groupId>
+                <artifactId>regex</artifactId>
+                <version>${graalvm.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ibm.icu</groupId>
+                <artifactId>icu4j</artifactId>
+                <version>${icu.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.h2database.wso2</groupId>
                 <artifactId>h2-database-engine</artifactId>
                 <version>${orbit.version.h2.engine}</version>
@@ -2579,6 +2604,8 @@
         <org.apache.bsf.wso2.version>3.0.0.wso2v5</org.apache.bsf.wso2.version>
         <org.apache.velocity.version>1.7</org.apache.velocity.version>
         <rhino.wso2.js.version>1.7.0.R4.wso2v1</rhino.wso2.js.version>
+        <graalvm.version>23.0.4</graalvm.version>
+        <icu.version>72.1</icu.version>
         <spring.version>3.0.7.RELEASE</spring.version>
         <aopalliance.version>1.0</aopalliance.version>
         <wsdl4j.version>1.6.3</wsdl4j.version>

@@ -16,6 +16,8 @@
  */
 package org.wso2.carbon.mediator.datamapper;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.OMException;
 import org.apache.axiom.om.impl.llom.OMTextImpl;
@@ -55,10 +57,7 @@ import org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstant
 import org.wso2.carbon.mediator.datamapper.engine.utils.InputOutputDataType;
 import org.xml.sax.SAXException;
 
-import javax.script.Compilable;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
+import javax.script.*;
 import javax.xml.namespace.QName;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.stream.XMLStreamException;
@@ -72,6 +71,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Stack;
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Source;
 
 import static org.wso2.carbon.mediator.datamapper.config.xml.DataMapperMediatorConstants.AXIS2_CLIENT_CONTEXT;
 import static org.wso2.carbon.mediator.datamapper.config.xml.DataMapperMediatorConstants.AXIS2_CONTEXT;
@@ -82,11 +83,8 @@ import static org.wso2.carbon.mediator.datamapper.config.xml.DataMapperMediatorC
 import static org.wso2.carbon.mediator.datamapper.config.xml.DataMapperMediatorConstants.SYNAPSE_CONTEXT;
 import static org.wso2.carbon.mediator.datamapper.config.xml.DataMapperMediatorConstants.TRANSPORT_CONTEXT;
 import static org.wso2.carbon.mediator.datamapper.config.xml.DataMapperMediatorConstants.TRANSPORT_HEADERS;
-import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.ORG_APACHE_SYNAPSE_DATAMAPPER_EXECUTOR_POOL_SIZE;
 import static org.wso2.carbon.mediator.datamapper.engine.core.executors.ScriptExecutor.INPUT_VARIABLE_IDENTIFIER;
-import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.ENCODE_CHAR_HYPHEN;
-import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.HYPHEN;
-import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.PROPERTIES_OBJECT_NAME;
+import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.*;
 
 /**
  * By using the input schema, output schema and mapping configuration,
@@ -398,7 +396,7 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                         // Only the first thread inside the sync block should pre-compile the script.
                         if (!compiledFunctionList.contains(mappingResource.getFunction())) {
                             try {
-                                ScriptEngine scriptEngine = getScriptExecutor();
+                                Object scriptEngine = getScriptExecutor();
                                 JSFunction jsFunction = mappingResource.getFunction();
                                 String helperJSFunction = "var " + PROPERTIES_OBJECT_NAME + " = JSON.parse(" + ScriptExecutor.PROPERTIES_IDENTIFIER + ");\n" +
                                         "var " + getInputVariable(mappingResource.getInputSchema().getName()) + " = JSON.parse(" + INPUT_VARIABLE_IDENTIFIER + ");\n";
@@ -406,17 +404,26 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                                 if (jsFunction.getCompiledBody() == null) {
                                     if (scriptEngine instanceof Compilable) {
                                         jsFunction.setCompiledBody(((Compilable) scriptEngine).compile(jsFunction.getFunctionBody()));
+                                    } else if (scriptEngine instanceof Context) {
+                                        Source source = Source.create(GRAALVM_ENGINE_NAME, jsFunction.getFunctionBody());
+                                        jsFunction.setCompiledBody(((Context) scriptEngine).eval(source));
                                     }
                                 }
                                 // Compile Data-mapper JS function name
-                                if (jsFunction.getCompiledName() == null) {
-                                    if (scriptEngine instanceof Compilable) {
-                                        jsFunction.setCompiledName(((Compilable) scriptEngine).compile(jsFunction.getFunctionName()));
-                                    }
-                                }
+//                                if (jsFunction.getCompiledName() == null) {
+//                                    if (scriptEngine instanceof Compilable) {
+//                                        jsFunction.setCompiledName(((Compilable) scriptEngine).compile(jsFunction.getFunctionName()));
+//                                    } else if (scriptEngine instanceof Context) {
+//                                        Source source = Source.create(GRAALVM_ENGINE_NAME, jsFunction.getFunctionName());
+//                                        jsFunction.setCompiledName(((Context) scriptEngine).eval(source));
+//                                    }
+//                                }
                                 if (jsFunction.getBindingHelperFunction() == null) {
                                     if (scriptEngine instanceof Compilable) {
                                         jsFunction.setBindingHelperFunction(((Compilable) scriptEngine).compile(helperJSFunction));
+                                    } else if (scriptEngine instanceof Context) {
+                                        Source source = Source.create(GRAALVM_ENGINE_NAME, helperJSFunction);
+                                        jsFunction.setBindingHelperFunction(((Context) scriptEngine).eval(source));
                                     }
                                 }
                                 // setting the pre-compiled function from the first thread
@@ -435,9 +442,18 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                 propertiesMap = getPropertiesMap(mappingResource.getPropertiesList(), synCtx);
 
                 /* execute mapping on the input stream */
-                outputResult = mappingHandler.doMap(
-                        getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName()),
-                        propertiesMap);
+                if (mappingResource.getFunction().getCompiledBody() instanceof org.graalvm.polyglot.Value) {
+                    Context context = (Context) getScriptExecutor();
+                    org.graalvm.polyglot.Value compiledBody = (org.graalvm.polyglot.Value) mappingResource.getFunction().getCompiledBody();
+                    org.graalvm.polyglot.Value bindings = context.eval(Source.create(GRAALVM_ENGINE_NAME, mappingResource.getFunction().getBindingHelperFunction()));
+                    bindings.putMember(PROPERTIES_OBJECT_NAME, getPropertiesMapAsJson(propertiesMap));
+                    bindings.putMember(INPUT_VARIABLE_IDENTIFIER, getInputStreamAsJson(getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName())));
+                    outputResult = String.valueOf(compiledBody.execute(bindings));
+                } else {
+                    outputResult = mappingHandler.doMap(
+                            getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName()),
+                            propertiesMap);
+                }
             }
 
             if (InputOutputDataType.CSV.toString().equals(outputType) &&
@@ -749,12 +765,35 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                 .replace(HYPHEN, ENCODE_CHAR_HYPHEN);
     }
 
-    private ScriptEngine getScriptExecutor() {
+    private Object getScriptExecutor() {
 
         String javaVersion = System.getProperty("java.version");
         if (javaVersion.startsWith("1.7") || javaVersion.startsWith("1.6")) {
             return new ScriptEngineManager().getEngineByName(DataMapperEngineConstants.DEFAULT_ENGINE_NAME);
         }
-        return new ScriptEngineManager().getEngineByName(DataMapperEngineConstants.NASHORN_ENGINE_NAME);
+        return Context.create(GRAALVM_ENGINE_NAME);
+    }
+
+    private String getPropertiesMapAsJson(Map<String, Map<String, Object>> propertiesMap) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.configure(SerializationFeature.INDENT_OUTPUT, false); // You can configure it according to your need
+        try {
+            return objectMapper.writeValueAsString(propertiesMap);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "{}"; // Return empty JSON object in case of error
+        }
+    }
+
+    private String getInputStreamAsJson(InputStream inputStream) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            // Assuming the InputStream contains JSON data
+            Object json = objectMapper.readValue(inputStream, Object.class);
+            return objectMapper.writeValueAsString(json);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "{}"; // Return empty JSON object in case of error
+        }
     }
 }
